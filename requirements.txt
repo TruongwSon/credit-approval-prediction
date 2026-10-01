@@ -1,7 +1,10 @@
 streamlit
 pandas
 numpy
+scipy
 scikit-learn
-joblib
 matplotlib
 seaborn
+certifi
+joblib
+openpyxl
