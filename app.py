@@ -3,8 +3,6 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import io
-import certifi
 from scipy import stats
 from sklearn.model_selection import StratifiedKFold, cross_validate, train_test_split
 from sklearn.pipeline import Pipeline
@@ -104,16 +102,145 @@ st.markdown("""
 
 # BỐ CỤC THEO 5 CHƯƠNG ĐỒ ÁN
 tabs = st.tabs([
-    "📖 Chương 1: Kiến Trúc & Tổng Quan",
-    "🔬 Chương 2: Phân Tích Thống Kê & WoE/IV",
-    "📊 Chương 3: Benchmark & Cross-Validation",
-    "🧠 Chương 4: XAI & Tối Ưu Chi Phí",
-    "🚀 Chương 5: Thẩm Định Hồ Sơ Mới (Batch Engine)"
+    "🚀 Chương 1: Dự Đoán Hồ Sơ (Predict Engine)",
+    "📖 Chương 2: Kiến Trúc & Tổng Quan",
+    "🔬 Chương 3: Phân Tích Thống Kê & WoE/IV",
+    "📊 Chương 4: Benchmark & Cross-Validation",
+    "🧠 Chương 5: XAI & Tối Ưu Chi Phí"
 ])
 
-# ================= CHƯƠNG 1: TỔNG QUAN & DỮ LIỆU GỐC =================
+# ================= CHƯƠNG 1: DỰ ĐOÁN HỒ SƠ VỚI NÚT BẤM PREDICT =================
 with tabs[0]:
-    st.subheader("1. Tổng quan Bộ Dữ Liệu & Kiến Trúc Luồng Xử Lý")
+    st.subheader("1. Credit Approval App Prediction (Dự Đoán Quyết Định + / -)")
+    st.markdown("""
+    Theo sơ đồ thẩm định: Mô hình nạp dữ liệu đầu vào (không chứa cột `Approval`) và tiến hành phân loại thành:
+    * **`+` : Chấp thuận cấp tín dụng (Approved)**
+    * **`-` : Từ chối cấp tín dụng (Rejected)**
+    """)
+
+    predict_mode = st.radio("Chọn phương thức dự đoán:",
+                            ["Cách 1: Chọn ngẫu nhiên n dòng mẫu từ hệ thống",
+                             "Cách 2: Tải lên file CSV / Excel mới (Upload Data)"],
+                            horizontal=True)
+
+    # ---------------- CÁCH 1: DỰ ĐOÁN N DÒNG MẪU ----------------
+    if predict_mode == "Cách 1: Chọn ngẫu nhiên n dòng mẫu từ hệ thống":
+        col_p1, col_p2 = st.columns([3, 1])
+        with col_p1:
+            n_samples = st.slider("Chọn số lượng hồ sơ mới cần dự đoán (n):", min_value=1, max_value=30, value=5,
+                                  step=1)
+        with col_p2:
+            st.write("")
+            st.write("")
+            btn_predict_sample = st.button("🔮 PREDICT (+ / -)", type="primary", use_container_width=True,
+                                           key="btn_sample")
+
+        if btn_predict_sample:
+            input_df = X_full.sample(n=int(n_samples), random_state=np.random.randint(10000)).copy()
+            preds = model_pipeline.predict(input_df)
+            probs = model_pipeline.predict_proba(input_df)[:, 1]
+
+            res_df = input_df.copy()
+            res_df.insert(0, 'Approval', np.where(preds == 1, '+', '-'))
+            res_df.insert(1, 'Tỷ Lệ Duyệt (+)', (probs * 100).round(2).astype(str) + '%')
+
+            st.success(f" ĐÃ HOÀN TẤT DỰ ĐOÁN CHO {n_samples} HỒ SƠ!")
+
+            k1, k2, k3 = st.columns(3)
+            k1.metric("Tổng hồ sơ xử lý", len(res_df))
+            k2.metric("Chấp thuận (+)", int((preds == 1).sum()))
+            k3.metric("Từ chối (-)", int((preds == 0).sum()))
+
+            st.write("### 📑 Bảng Quyết Định Phê Duyệt Tín Dụng (+ / -):")
+
+
+            def color_approval(val):
+                if val == '+':
+                    return 'background-color: #d4edda; color: #155724; font-weight: bold;'
+                elif val == '-':
+                    return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+                return ''
+
+
+            # Dùng .map thay vì .applymap để chuẩn hóa theo Pandas mới
+            if hasattr(res_df.style, 'map'):
+                st.dataframe(res_df.style.map(color_approval, subset=['Approval']), use_container_width=True)
+            else:
+                st.dataframe(res_df.style.applymap(color_approval, subset=['Approval']), use_container_width=True)
+
+    # ---------------- CÁCH 2: UPLOAD DATA (ĐÚNG SƠ ĐỒ TRÊN BẢNG) ----------------
+    else:
+        col_u1, col_u2 = st.columns([3, 1])
+        with col_u1:
+            uploaded_file = st.file_uploader("📂 Upload Data (File CSV hoặc Excel không có cột Approval):",
+                                             type=["csv", "xlsx"])
+        with col_u2:
+            st.write("##### File mẫu test chuẩn:")
+            sample_download = X_full.sample(10, random_state=42)
+            csv_sample = sample_download.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Tải File Mẫu Test (10 dòng)", data=csv_sample, file_name="sample_test_input.csv",
+                               mime="text/csv")
+
+        if uploaded_file is not None:
+            if uploaded_file.name.endswith('.csv'):
+                input_df = pd.read_csv(uploaded_file)
+            else:
+                input_df = pd.read_excel(uploaded_file)
+
+            st.write(f"📋 **Dữ liệu đầu vào ({len(input_df)} hồ sơ):**")
+            st.dataframe(input_df.head(), use_container_width=True)
+
+            # NÚT PREDICT CHO DỮ LIỆU UPLOAD
+            btn_predict_upload = st.button("🔮 PREDICT (+ / -)", type="primary", use_container_width=True,
+                                           key="btn_upload")
+
+            if btn_predict_upload:
+                with st.spinner("Đang chạy mô hình thẩm định rủi ro..."):
+                    batch_preds = model_pipeline.predict(input_df)
+                    batch_probs = model_pipeline.predict_proba(input_df)[:, 1]
+
+                    res_df = input_df.copy()
+                    res_df.insert(0, 'Approval', np.where(batch_preds == 1, '+', '-'))
+                    res_df.insert(1, 'Tỷ Lệ Duyệt (+)', (batch_probs * 100).round(2).astype(str) + '%')
+
+                    st.success(" ĐÃ HOÀN TẤT DỰ ĐOÁN HÀNG LOẠT!")
+
+                    k1, k2, k3, k4 = st.columns(4)
+                    approved_cnt = int((batch_preds == 1).sum())
+                    rejected_cnt = int((batch_preds == 0).sum())
+                    k1.metric("Tổng hồ sơ xử lý", len(res_df))
+                    k2.metric("Chấp thuận (+)", f"{approved_cnt} ({approved_cnt / len(res_df) * 100:.1f}%)")
+                    k3.metric("Từ chối (-)", f"{rejected_cnt} ({rejected_cnt / len(res_df) * 100:.1f}%)")
+                    k4.metric("Xác suất duyệt TB", f"{batch_probs.mean() * 100:.2f}%")
+
+                    st.write("### 📑 Bảng Quyết Định Phê Duyệt Tín Dụng (+ / -):")
+
+
+                    def color_approval(val):
+                        if val == '+':
+                            return 'background-color: #d4edda; color: #155724; font-weight: bold;'
+                        elif val == '-':
+                            return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+                        return ''
+
+
+                    if hasattr(res_df.style, 'map'):
+                        st.dataframe(res_df.style.map(color_approval, subset=['Approval']), use_container_width=True)
+                    else:
+                        st.dataframe(res_df.style.applymap(color_approval, subset=['Approval']),
+                                     use_container_width=True)
+
+                    out_csv = res_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        "📥 Tải Về Kết Quả Thẩm Định Hoàn Chỉnh (CSV)",
+                        data=out_csv,
+                        file_name="credit_approval_evaluated.csv",
+                        mime="text/csv"
+                    )
+
+# ================= CHƯƠNG 2: TỔNG QUAN & DỮ LIỆU GỐC =================
+with tabs[1]:
+    st.subheader("2. Tổng quan Bộ Dữ Liệu & Kiến Trúc Luồng Xử Lý")
     st.markdown("""
     Nghiên cứu sử dụng tập dữ liệu **Credit Approval** (UCI Machine Learning Repository, ID=27) được trích xuất từ môi trường ngân hàng thực tế.
     Dữ liệu được nạp vào **Hệ quản trị CSDL TiDB Cloud (MySQL Engine)** qua kênh truyền bảo mật SSL/TLS.
@@ -134,9 +261,9 @@ with tabs[0]:
     st.dataframe(df_raw[NUMERIC_COLS].describe().T[['mean', 'std', 'min', '25%', '50%', '75%', 'max']],
                  use_container_width=True)
 
-# ================= CHƯƠNG 2: PHÂN TÍCH THỐNG KÊ CHUYÊN SÂU =================
-with tabs[1]:
-    st.subheader("2. Phân Tích Rủi Ro Tín Dụng: Weight of Evidence (WoE) & Information Value (IV)")
+# ================= CHƯƠNG 3: PHÂN TÍCH THỐNG KÊ CHUYÊN SÂU =================
+with tabs[2]:
+    st.subheader("3. Phân Tích Rủi Ro Tín Dụng: Weight of Evidence (WoE) & Information Value (IV)")
     st.markdown("""
     Trong mô hình hóa rủi ro tín dụng theo chuẩn **Basel II/III**, **Information Value (IV)** được dùng để xác định biến số nào chi phối mạnh nhất đến rủi ro vỡ nợ:
     * **$IV < 0.02$:** Không có giá trị dự báo.
@@ -144,7 +271,6 @@ with tabs[1]:
     * **$IV \ge 0.3$:** Sức mạnh dự báo vượt trội (**Strong Predictor**).
     """)
 
-    # Tính toán IV thực tế cho các biến phân loại
     iv_records = []
     total_goods = (df_raw['A16'] == '+').sum()
     total_bads = (df_raw['A16'] == '-').sum()
@@ -188,9 +314,9 @@ with tabs[1]:
         st.success(
             "✅ **Kết luận khoa học:** $p\\text{-value} < 0.001$, bác bỏ giả thuyết $H_0$. Có bằng chứng thống kê vững chắc cho thấy Tiền sử nợ xấu (`A9`) là nhân tố quyết định trực tiếp tới khả năng phê duyệt tín dụng.")
 
-# ================= CHƯƠNG 3: BENCHMARK & SO SÁNH MÔ HÌNH =================
-with tabs[2]:
-    st.subheader("3. Benchmark Hệ Thống Học Máy Qua 5-Fold Stratified Cross-Validation")
+# ================= CHƯƠNG 4: BENCHMARK & SO SÁNH MÔ HÌNH =================
+with tabs[3]:
+    st.subheader("4. Benchmark Hệ Thống Học Máy Qua 5-Fold Stratified Cross-Validation")
     st.markdown("""
     Để tránh hiện tượng Data Leakage và Overfitting, chúng tôi thiết lập quy trình kiểm chuẩn chéo phân tầng (**5-Fold Stratified CV**) 
     trên 3 trường phái thuật toán tiêu biểu: **Tuyến tính (Logistic Regression)**, **Bagging (Random Forest)**, và **Boosting (Gradient Boosting)**.
@@ -251,9 +377,9 @@ with tabs[2]:
         ax_cm.set_ylabel("Thực tế (Ground Truth)")
         st.pyplot(fig_cm)
 
-# ================= CHƯƠNG 4: XAI VÀ TỐI ƯU CHI PHÍ NGÂN HÀNG =================
-with tabs[3]:
-    st.subheader("4. Khả Năng Giải Thích Mô Hình (XAI) & Ma Trận Chi Phí Rủi Ro (Cost-Sensitive Matrix)")
+# ================= CHƯƠNG 5: XAI VÀ TỐI ƯU CHI PHÍ NGÂN HÀNG =================
+with tabs[4]:
+    st.subheader("5. Khả Năng Giải Thích Mô Hình (XAI) & Ma Trận Chi Phí Rủi Ro (Cost-Sensitive Matrix)")
     st.markdown("""
     Trong hệ thống ngân hàng tuân thủ quy chuẩn quốc tế, mô hình AI không được phép là "hộp đen" (Black-box). 
     Chúng tôi sử dụng kỹ thuật trích xuất độ ảnh hưởng đặc trưng (**Feature Importance**) kết hợp thiết lập **ngưỡng cắt tối ưu chi phí**.
@@ -280,16 +406,11 @@ with tabs[3]:
 
     with col_xai2:
         st.write("##### Điều Chỉnh Ngưỡng Quyết Định (Threshold Cut-off Analyzer):")
-        st.markdown("""
-        * Mặc định xác suất duyệt là **0.50**.
-        * Nếu ngân hàng thắt chặt tín dụng phòng ngừa nợ xấu: **Nâng ngưỡng lên 0.65 - 0.70**.
-        """)
         threshold = st.slider("Ngưỡng duyệt (Threshold):", min_value=0.1, max_value=0.9, value=0.5, step=0.05)
         adjusted_preds = (y_proba >= threshold).astype(int)
 
-        # Mô phỏng ma trận tổn thất: Cho vay nhầm 1 ca vỡ nợ thiệt hại gấp 5 lần từ chối nhầm 1 khách hàng tốt
-        cost_fp = 5.0  # Mất vốn
-        cost_fn = 1.0  # Mất chi phí cơ hội
+        cost_fp = 5.0
+        cost_fn = 1.0
         cm_adj = confusion_matrix(y_test, adjusted_preds)
         tn, fp, fn, tp = cm_adj.ravel()
         total_loss = (fp * cost_fp) + (fn * cost_fn)
@@ -298,80 +419,3 @@ with tabs[3]:
                   help="Hệ số tổn thất dựa trên giả định thiệt hại nợ xấu lớn gấp 5 lần bỏ sót khách hàng tốt")
         st.write(f"* Số hồ sơ được duyệt ở ngưỡng này: **{tp + fp}**")
         st.write(f"* Số hồ sơ bị từ chối: **{tn + fn}**")
-
-# ================= CHƯƠNG 5: HỆ THỐNG SUY LUẬN BATCH TẬP TIN =================
-with tabs[4]:
-    st.subheader("5. Thẩm Định & Phân Loại Hàng Loạt Hồ Sơ Vay (Batch Decisioning Engine)")
-    st.markdown(
-        "Hệ thống tiếp nhận tệp tin định dạng `.CSV` hoặc `.XLSX` chứa danh sách hồ sơ **(không có cột Approval)** để tự động thẩm định:")
-
-    col_u1, col_u2 = st.columns([3, 1])
-    with col_u1:
-        uploaded_file = st.file_uploader("📂 Tải lên tệp hồ sơ tín dụng mới (Batch File):", type=["csv", "xlsx"])
-    with col_u2:
-        st.write("##### File mẫu chuẩn:")
-        sample_download = X_full.sample(10, random_state=42)
-        csv_sample = sample_download.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Tải File Mẫu Test (10 dòng)", data=csv_sample, file_name="sample_test_input.csv",
-                           mime="text/csv")
-
-    if uploaded_file is not None:
-        if uploaded_file.name.endswith('.csv'):
-            input_df = pd.read_csv(uploaded_file)
-        else:
-            input_df = pd.read_excel(uploaded_file)
-
-        st.write(f"📋 **Đã nạp {len(input_df)} hồ sơ cần thẩm định:**")
-        st.dataframe(input_df.head(), use_container_width=True)
-
-        if st.button("🚀 BẮT ĐẦU THẨM ĐỊNH TÍN DỤNG TỰ ĐỘNG", type="primary"):
-            with st.spinner("Đang chạy quy trình thẩm định rủi ro và chấm điểm tín dụng..."):
-                batch_preds = model_pipeline.predict(input_df)
-                batch_probs = model_pipeline.predict_proba(input_df)[:, 1]
-
-                res_df = input_df.copy()
-                res_df['Decision'] = np.where(batch_preds == 1, '+', '-')
-                res_df['Approval_Probability'] = (batch_probs * 100).round(2)
-                res_df['Risk_Level'] = pd.cut(
-                    res_df['Approval_Probability'],
-                    bins=[-1, 35, 65, 100],
-                    labels=['Cao (High Risk)', 'Trung Bình (Moderate)', 'Thấp (Low Risk)']
-                )
-
-                st.success(" ĐÃ HOÀN TẤT THẨM ĐỊNH HÀNG LOẠT!")
-
-                # Thẻ đo lường KPI
-                k1, k2, k3, k4 = st.columns(4)
-                approved_cnt = int((batch_preds == 1).sum())
-                rejected_cnt = int((batch_preds == 0).sum())
-                k1.metric("Tổng hồ sơ xử lý", len(res_df))
-                k2.metric("Chấp thuận cấp tín dụng (+)", f"{approved_cnt} ({approved_cnt / len(res_df) * 100:.1f}%)")
-                k3.metric("Từ chối tín dụng (-)", f"{rejected_cnt} ({rejected_cnt / len(res_df) * 100:.1f}%)")
-                k4.metric("Xác suất duyệt TB", f"{res_df['Approval_Probability'].mean():.2f}%")
-
-                # Hiển thị bảng kết quả
-                st.write("### 📑 Bảng Quyết Định Phê Duyệt Tín Dụng Chi Tiết:")
-                display_cols = ['Decision', 'Approval_Probability', 'Risk_Level'] + [c for c in input_df.columns if
-                                                                                     c in NUMERIC_COLS or c in ['A9',
-                                                                                                                'A10']]
-
-
-                def highlight_decision(val):
-                    if val == '+':
-                        return 'background-color: #d4edda; color: #155724; font-weight: bold;'
-                    elif val == '-':
-                        return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
-                    return ''
-
-
-                st.dataframe(res_df[display_cols].style.applymap(highlight_decision, subset=['Decision']),
-                             use_container_width=True)
-
-                # Nút tải báo cáo
-                out_csv = res_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    "📥 Tải Về Kết Quả Thẩm Định Hoàn Chỉnh (CSV)",
-                    data=out_csv,
-                    file_name="credit_approval_evaluated.csv",
-                    mime="text/csv"
-                )
